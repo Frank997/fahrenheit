@@ -133,7 +133,7 @@ impl EventLoop {
     fn add_write_interest(&self, fd: RawFd, waker: Waker) {
         debug!("adding write interest for {}", fd);
 
-        if !self.write.borrow().contains_key(&fd) {
+        if !self.write.borrow().contains_key(&fd) { //fd应该是可比较的，所以直接添加就行，btreemap不会重复添加元素，这里的contains检查多此一举
             self.write.borrow_mut().insert(fd, waker);
         }
     }
@@ -172,6 +172,7 @@ impl EventLoop {
         self.do_spawn(f);
 
         loop {
+            //检测哪些fd就绪 - 开始
             debug!("select loop start");
 
             // event loop iteration timeout. if no descriptor
@@ -213,7 +214,7 @@ impl EventLoop {
                     &mut write_fds,
                     std::ptr::null_mut(),
                     &mut tv,
-                )
+                )  //可将select换成mio
             };
 
             // don't care for errors
@@ -225,6 +226,9 @@ impl EventLoop {
                 debug!("data available on {} fds", rv);
             }
 
+            //检测哪些fd就绪 - 结束
+
+            //唤醒就绪的fd的context - 开始
             // check which fd it was and put appropriate future on run queue
             for (fd, waker) in self.read.borrow().iter() {
                 let is_set = unsafe { FD_ISSET(*fd, &mut read_fds as *mut fd_set) };
@@ -243,6 +247,9 @@ impl EventLoop {
                 }
             }
 
+            //唤醒就绪的fd的context - 结束
+
+            //移除就绪的fd对应的task
             // now pop wakeup notifications from the run queue and poll associated futures
             loop {
                 let w = self.run_queue.borrow_mut().pop_front();
@@ -250,6 +257,7 @@ impl EventLoop {
                     Some(w) => {
                         debug!("polling task#{}", w.index);
 
+                        //先移除task，然后检测是否就绪，如果未就绪就重新添加回去，如果就绪就保持移除状态(在上面已经将就绪的context唤醒了，这里不用管了，那些就绪的future会从之前await的地方继续执行，然后结束)。
                         let task = self.wait_queue.borrow_mut().remove(&w.index);
                         if let Some(mut task) = task {
                             // if a task is not ready put it back
@@ -263,6 +271,7 @@ impl EventLoop {
                 }
             }
 
+            //没任务的时候返回
             // stop the loop if no more tasks
             if self.wait_queue.borrow().is_empty() {
                 return;

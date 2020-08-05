@@ -32,6 +32,8 @@ impl AsyncTcpListener {
 
 pub struct Incoming(TcpListener);
 
+//Future 代表一个任务，Stream代表n个Future，可以通过poll_next来不断获取下一个任务
+//Stream类似Future Iterator，会不断调用poll_next来获取下一个future(或者说future任务)，listener socket需要不断accept连接，因此将其抽象为Stream比较合适(不太确定，没试过，但直接用原生socket不断accept然后把每个返回的连接分别封装进不同的future里再传给reactor也行)
 impl Stream for Incoming {
     type Item = AsyncTcpStream;
 
@@ -41,17 +43,17 @@ impl Stream for Incoming {
         let fd = self.0.as_raw_fd();
         let waker = ctx.waker();
 
-        match self.0.accept() {
+        match self.0.accept() {  //阻塞直到有连接来
             Ok((conn, _)) => {
                 let stream = AsyncTcpStream::from_std(conn).unwrap();
-                Poll::Ready(Some(stream))
+                Poll::Ready(Some(stream))  //返回stream
             }
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
+            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {  //如果是EWOULDBLOCK，返回pending
                 REACTOR.with(|reactor| reactor.add_read_interest(fd, waker.clone()));
 
                 Poll::Pending
             }
-            Err(err) => panic!("error {:?}", err),
+            Err(err) => panic!("error {:?}", err),  //如果不是 阻塞error ，panic
         }
     }
 }

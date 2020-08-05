@@ -7,7 +7,14 @@ async fn http_get(addr: &str) -> Result<String, std::io::Error> {
     let mut page = Vec::new();
     loop {
         let mut buf = vec![0; 128];
-        let len = conn.read(&mut buf).await?;
+        let len = conn.read(&mut buf).await?;  
+        /* await = loop {
+                        match future::poll(cx) {
+                            Poll::Ready(x) => return x;  //如果是ready，返回调用await的函数的返回值
+                            Poll::Pending => {} //否则pending，等待唤醒(reactor唤醒它还是excetor唤醒它？)
+                        }
+                    }
+        */
         if len == 0 {
             break;
         }
